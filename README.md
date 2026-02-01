@@ -59,9 +59,8 @@ The baseline institutional analysis confirms high stability and efficient downsi
 ---
 
 ## 5. How to Run
-1.  **Clone the Repo:** ```bash
-    git clone [https://github.com/your-username/HMM-Regime-Detection.git](https://github.com/your-username/HMM-Regime-Detection.git)
-    ```
+1.  **Clone the Repo:** 
+
 2.  **Install Requirements:**
     pandas numpy matplotlib hmmlearn sklearn pyfolio
     
