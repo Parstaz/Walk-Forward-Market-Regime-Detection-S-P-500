@@ -1,0 +1,10 @@
+# US business cycle peaks and troughs (monthly), NBER Business Cycle Dating Committee.
+# Source: https://www.nber.org/research/data/us-business-cycle-expansions-and-contractions
+# (table last updated by NBER 2023-03-14; retrieved 2026-11-23). No turning points after April 2020 listed.
+# Recession = first day of the month after the peak through the last day of the trough month
+# (same convention as FRED series USREC). See src/metrics.py:load_nber.
+peak,trough
+1990-07-01,1991-03-01
+2001-03-01,2001-11-01
+2007-12-01,2009-06-01
+2020-02-01,2020-04-01
