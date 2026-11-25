@@ -16,12 +16,6 @@ DEFAULT_COST_BPS = 5.0
 
 PROB_COLS = [f"p_{name.lower()}" for name in LABELS]
 
-# Each rule maps the most likely label on day t to the position held on day t+1.
-RULES = {
-    "A_calm_only": lambda label: label == "Calm",
-    "B_not_stressed": lambda label: label != "Stressed",
-}
-
 
 @dataclass
 class FitRecord:
@@ -32,6 +26,10 @@ class FitRecord:
     hit_max_iter: bool
     nonmonotonic_warnings: int
     error: str | None
+    best_seed: int | None = None
+    log_likelihood: float = np.nan
+    loglik_spread: float = np.nan
+    failed_seeds: int = 0
 
 
 def walk_forward(feat: pd.DataFrame, burn_in: int = BURN_IN, refit_every: int = REFIT_EVERY):
@@ -61,6 +59,8 @@ def walk_forward(feat: pd.DataFrame, burn_in: int = BURN_IN, refit_every: int = 
             log.error("Refit at %s (%d rows) failed: %s", dates[t].date(), t, exc)
             fits.append(FitRecord(dates[t], t, False, None, False, 0, repr(exc)))
         else:
+            log.info("Refit %s: best seed %d, loglik %.3f, spread across seeds %.3f",
+                     dates[t].date(), fit.best_seed, fit.log_likelihood, fit.loglik_spread)
             if not fit.converged:
                 log.warning(
                     "Refit at %s did not converge cleanly: n_iter=%d hit_max_iter=%s "
@@ -68,7 +68,8 @@ def walk_forward(feat: pd.DataFrame, burn_in: int = BURN_IN, refit_every: int = 
                     dates[t].date(), fit.n_iter, fit.hit_max_iter, fit.nonmonotonic_warnings,
                 )
             fits.append(FitRecord(dates[t], t, True, fit.n_iter, fit.hit_max_iter,
-                                  fit.nonmonotonic_warnings, None))
+                                  fit.nonmonotonic_warnings, None, fit.best_seed,
+                                  fit.log_likelihood, fit.loglik_spread, fit.failed_seeds))
             current, current_refit_date = fit, dates[t]
 
         for i in range(t, min(t + refit_every, n)):
@@ -87,17 +88,18 @@ def walk_forward(feat: pd.DataFrame, burn_in: int = BURN_IN, refit_every: int = 
     return out, fits
 
 
-def apply_rule(regimes: pd.DataFrame, returns: pd.Series, rule: str,
+def apply_rule(regimes: pd.DataFrame, returns: pd.Series,
                cost_bps: float = DEFAULT_COST_BPS) -> pd.DataFrame:
-    """Turn daily labels into next-day positions and gross/net log returns.
+    """Invested unless the most likely state is Stressed (v2 rule).
+
+    Turns daily labels into next-day positions and gross/net log returns.
 
     The signal decided at the close of day t is held during day t+1. The
     first day of the regime series therefore has no position, so results
     start on its second day. Position before the first day is cash, so the
     first entry counts as a switch. Each switch costs `cost_bps` of wealth.
     """
-    decide = RULES[rule]
-    signal = regimes["label"].map(lambda lab: lab is not None and decide(lab)).astype(int)
+    signal = regimes["label"].map(lambda lab: lab is not None and lab != "Stressed").astype(int)
     position = signal.shift(1).iloc[1:].astype(int)
 
     r = returns.reindex(position.index)

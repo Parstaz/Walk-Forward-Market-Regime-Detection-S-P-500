@@ -3,11 +3,12 @@
 Usage:
     python scripts/run_backtest.py [--cost-bps 5] [--out-dir DIR] [--prices-csv FILE]
 
-With --out-dir, writes prices.csv, regimes.csv, rule_<name>.csv and
+With --out-dir, writes prices.csv, regimes.csv, strategy.csv, fits.csv and
 metrics.json there so two runs can be compared file by file.
 """
 import argparse
 import json
+from dataclasses import asdict
 import logging
 import sys
 from pathlib import Path
@@ -20,7 +21,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from threadpoolctl import threadpool_info  # noqa: E402
 
-from src.backtest import DEFAULT_COST_BPS, RULES, apply_rule, walk_forward  # noqa: E402
+from src.backtest import DEFAULT_COST_BPS, apply_rule, walk_forward  # noqa: E402
 from src.data import fetch_prices  # noqa: E402
 from src.features import compute_features  # noqa: E402
 from src.metrics import load_nber, nber_check, performance  # noqa: E402
@@ -37,22 +38,20 @@ def run(cost_bps: float, prices_csv: Path | None = None):
     regimes, fits = walk_forward(feat)
     nber = load_nber(ROOT / "data" / "nber_recessions.csv")
 
-    rules = {name: apply_rule(regimes, feat["Returns"], name, cost_bps) for name in RULES}
-    any_rule = next(iter(rules.values()))
-    metrics = {"buy_and_hold": performance(any_rule["bh_ret"])}
-    for name, res in rules.items():
-        for kind in ("gross", "net"):
-            metrics[f"{name}_{kind}"] = performance(res[f"{kind}_ret"], res["position"], res["switch"])
+    strat = apply_rule(regimes, feat["Returns"], cost_bps)
+    metrics = {"buy_and_hold": performance(strat["bh_ret"])}
+    for kind in ("gross", "net"):
+        metrics[f"strategy_{kind}"] = performance(strat[f"{kind}_ret"], strat["position"], strat["switch"])
 
-    eval_labels = regimes["label"].reindex(any_rule.index)
+    eval_labels = regimes["label"].reindex(strat.index)
     summary = {
         "data": {
             "first_price": str(prices.index[0].date()),
             "last_price": str(prices.index[-1].date()),
             "feature_rows": len(feat),
-            "eval_start": str(any_rule.index[0].date()),
-            "eval_end": str(any_rule.index[-1].date()),
-            "eval_days": len(any_rule),
+            "eval_start": str(strat.index[0].date()),
+            "eval_end": str(strat.index[-1].date()),
+            "eval_days": len(strat),
         },
         "cost_bps": cost_bps,
         "fits": {
@@ -61,12 +60,17 @@ def run(cost_bps: float, prices_csv: Path | None = None):
             "hit_max_iter": sum(f.hit_max_iter for f in fits),
             "with_nonmonotonic_warnings": sum(f.nonmonotonic_warnings > 0 for f in fits),
             "mean_iter": float(np.mean([f.n_iter for f in fits if f.ok])),
+            "best_seed_not_42": sum(f.ok and f.best_seed != 42 for f in fits),
+            "best_seed_counts": pd.Series([f.best_seed for f in fits if f.ok]).value_counts().sort_index().to_dict(),
+            "failed_seed_fits": sum(f.failed_seeds for f in fits),
+            "loglik_spread_median": float(np.nanmedian([f.loglik_spread for f in fits])),
+            "loglik_spread_max": float(np.nanmax([f.loglik_spread for f in fits])),
         },
         "label_share": eval_labels.value_counts(normalize=True).to_dict(),
         "metrics": metrics,
         "nber": nber_check(eval_labels, nber),
     }
-    return prices, regimes, rules, summary
+    return prices, regimes, strat, fits, summary
 
 
 def print_table(summary):
@@ -94,15 +98,16 @@ def main():
     blas = {(p["internal_api"], p["num_threads"]) for p in threadpool_info()}
     log.info("Thread pools (api, threads): %s", sorted(blas))
 
-    prices, regimes, rules, summary = run(args.cost_bps, args.prices_csv)
+    prices, regimes, strat, fits, summary = run(args.cost_bps, args.prices_csv)
     print_table(summary)
 
     if args.out_dir:
         args.out_dir.mkdir(parents=True, exist_ok=True)
         prices.to_csv(args.out_dir / "prices.csv", float_format="%.17g")
         regimes.to_csv(args.out_dir / "regimes.csv", float_format="%.17g")
-        for name, res in rules.items():
-            res.to_csv(args.out_dir / f"rule_{name}.csv", float_format="%.17g")
+        strat.to_csv(args.out_dir / "strategy.csv", float_format="%.17g")
+        pd.DataFrame([asdict(f) for f in fits]).to_csv(args.out_dir / "fits.csv", index=False,
+                                                       float_format="%.17g")
         (args.out_dir / "metrics.json").write_text(json.dumps(summary, indent=2, default=str))
 
 

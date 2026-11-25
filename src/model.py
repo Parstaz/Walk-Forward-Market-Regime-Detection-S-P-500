@@ -10,15 +10,18 @@ from .features import FEATURES
 
 log = logging.getLogger(__name__)
 
-# Same settings as the v1 walk-forward loop.
+# Same settings as the v1 walk-forward loop; random_state is set per seed.
 HMM_PARAMS = dict(
     n_components=3,
     covariance_type="full",
     n_iter=1000,
     tol=0.01,
     min_covar=0.001,
-    random_state=42,
 )
+
+# EM is started from each seed and the fit with the highest log-likelihood
+# is kept. A single start sometimes lands in a worse local optimum.
+SEEDS = (42, 43, 44, 45, 46)
 
 LABELS = ("Calm", "Normal", "Stressed")
 VOL_COL = FEATURES.index("Volatility")
@@ -34,10 +37,23 @@ class FitResult:
     hit_max_iter: bool
     nonmonotonic_warnings: int
     raw_state_vol: np.ndarray = field(repr=False)
+    best_seed: int
+    log_likelihood: float
+    # Seed -> log-likelihood on the training window, NaN if that seed's fit raised.
+    seed_loglik: dict[int, float] = field(repr=False)
 
     @property
     def converged(self) -> bool:
         return not self.hit_max_iter and self.nonmonotonic_warnings == 0
+
+    @property
+    def loglik_spread(self) -> float:
+        ok = [v for v in self.seed_loglik.values() if np.isfinite(v)]
+        return max(ok) - min(ok)
+
+    @property
+    def failed_seeds(self) -> int:
+        return sum(not np.isfinite(v) for v in self.seed_loglik.values())
 
 
 class _CountWarnings(logging.Handler):
@@ -62,16 +78,8 @@ def label_states(model: GaussianHMM, scaler: StandardScaler) -> tuple[np.ndarray
     return np.argsort(raw_vol, kind="stable"), raw_vol
 
 
-def fit_hmm(train_features: np.ndarray) -> FitResult:
-    """Fit scaler + HMM on the training window and label the states.
-
-    Raises whatever hmmlearn raises if the fit itself fails; the caller
-    decides how to handle that.
-    """
-    scaler = StandardScaler()
-    X = scaler.fit_transform(train_features)
-    model = GaussianHMM(**HMM_PARAMS)
-
+def _fit_one(X: np.ndarray, seed: int) -> tuple[GaussianHMM, int]:
+    model = GaussianHMM(**HMM_PARAMS, random_state=seed)
     counter = _CountWarnings()
     hmm_log = logging.getLogger("hmmlearn.base")
     hmm_log.addHandler(counter)
@@ -79,7 +87,38 @@ def fit_hmm(train_features: np.ndarray) -> FitResult:
         model.fit(X)
     finally:
         hmm_log.removeHandler(counter)
+    return model, counter.count
 
+
+def fit_hmm(train_features: np.ndarray, seeds=SEEDS) -> FitResult:
+    """Fit the scaler, then the HMM from each seed; keep the best log-likelihood.
+
+    Ties go to the earlier seed. A seed whose fit raises is logged and
+    skipped; if every seed raises, the last error is re-raised.
+    """
+    scaler = StandardScaler()
+    X = scaler.fit_transform(train_features)
+
+    best = None
+    seed_loglik = {}
+    last_exc = None
+    for seed in seeds:
+        try:
+            model, warnings = _fit_one(X, seed)
+            ll = model.score(X)
+        except (ValueError, np.linalg.LinAlgError) as exc:
+            log.warning("Seed %d failed on %d rows: %s", seed, len(X), exc)
+            seed_loglik[seed] = np.nan
+            last_exc = exc
+            continue
+        seed_loglik[seed] = ll
+        if best is None or ll > best[2]:
+            best = (seed, model, ll, warnings)
+
+    if best is None:
+        raise last_exc
+
+    seed, model, ll, warnings = best
     state_order, raw_vol = label_states(model, scaler)
     n_iter = model.monitor_.iter
     return FitResult(
@@ -88,8 +127,11 @@ def fit_hmm(train_features: np.ndarray) -> FitResult:
         state_order=state_order,
         n_iter=n_iter,
         hit_max_iter=n_iter >= HMM_PARAMS["n_iter"],
-        nonmonotonic_warnings=counter.count,
+        nonmonotonic_warnings=warnings,
         raw_state_vol=raw_vol,
+        best_seed=seed,
+        log_likelihood=ll,
+        seed_loglik=seed_loglik,
     )
 
 
