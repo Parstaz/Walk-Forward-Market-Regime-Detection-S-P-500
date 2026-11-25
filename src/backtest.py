@@ -32,60 +32,78 @@ class FitRecord:
     failed_seeds: int = 0
 
 
-def walk_forward(feat: pd.DataFrame, burn_in: int = BURN_IN, refit_every: int = REFIT_EVERY):
-    """Filtered regime probabilities for every day from `burn_in` onwards.
+def is_refit_row(i: int, burn_in: int = BURN_IN, refit_every: int = REFIT_EVERY) -> bool:
+    return i >= burn_in and (i - burn_in) % refit_every == 0
 
-    A refit at row t trains on rows [0, t) and is the latest model for rows
-    t .. t+refit_every-1. For each of those rows, probabilities use features
-    up to and including that row only.
+
+def walk_forward(feat: pd.DataFrame, burn_in: int = BURN_IN, refit_every: int = REFIT_EVERY,
+                 start_row: int | None = None, current: FitResult | None = None,
+                 current_refit_date=pd.NaT):
+    """Filtered regime probabilities for feature rows `start_row` .. end.
+
+    Refits happen at rows burn_in, burn_in + refit_every, ... A refit at row
+    t trains on rows [0, t) and is the latest model for rows t onwards until
+    the next refit. Probabilities for row i use features up to and including
+    row i only.
+
+    The full backtest starts at row `burn_in` with no model. The daily
+    update resumes at the first new row with the saved model, so both run
+    the same loop and produce the same rows.
 
     If a refit raises, the error is logged and the previous model is kept.
-    If there is no previous model, that block gets NaN probabilities.
+    If there is no previous model, those rows get NaN probabilities.
 
-    Returns (probs DataFrame indexed by date, list[FitRecord]).
+    Returns (regimes DataFrame indexed by date, list[FitRecord], latest
+    model, latest refit date).
     """
     X_all = feat[FEATURES].to_numpy()
     n = len(X_all)
     dates = feat.index
+    start_row = burn_in if start_row is None else start_row
+    if start_row < burn_in:
+        raise ValueError(f"start_row {start_row} is inside the {burn_in}-row burn-in")
 
     rows, fits = [], []
-    current: FitResult | None = None
-    current_refit_date = pd.NaT
-
-    for t in range(burn_in, n, refit_every):
-        try:
-            fit = fit_hmm(X_all[:t])
-        except (ValueError, np.linalg.LinAlgError) as exc:
-            log.error("Refit at %s (%d rows) failed: %s", dates[t].date(), t, exc)
-            fits.append(FitRecord(dates[t], t, False, None, False, 0, repr(exc)))
-        else:
-            log.info("Refit %s: best seed %d, loglik %.3f, spread across seeds %.3f",
-                     dates[t].date(), fit.best_seed, fit.log_likelihood, fit.loglik_spread)
-            if not fit.converged:
-                log.warning(
-                    "Refit at %s did not converge cleanly: n_iter=%d hit_max_iter=%s "
-                    "nonmonotonic_warnings=%d",
-                    dates[t].date(), fit.n_iter, fit.hit_max_iter, fit.nonmonotonic_warnings,
-                )
-            fits.append(FitRecord(dates[t], t, True, fit.n_iter, fit.hit_max_iter,
-                                  fit.nonmonotonic_warnings, None, fit.best_seed,
-                                  fit.log_likelihood, fit.loglik_spread, fit.failed_seeds))
-            current, current_refit_date = fit, dates[t]
-
-        for i in range(t, min(t + refit_every, n)):
-            if current is None:
-                probs = np.full(len(LABELS), np.nan)
+    for i in range(start_row, n):
+        if is_refit_row(i, burn_in, refit_every):
+            try:
+                fit = fit_hmm(X_all[:i])
+            except (ValueError, np.linalg.LinAlgError) as exc:
+                log.error("Refit at %s (%d rows) failed: %s", dates[i].date(), i, exc)
+                fits.append(FitRecord(dates[i], i, False, None, False, 0, repr(exc)))
             else:
-                probs = filtered_proba(current, X_all[: i + 1])
-            rows.append((dates[i], current_refit_date, *probs))
+                log.info("Refit %s: best seed %d, loglik %.3f, spread across seeds %.3f",
+                         dates[i].date(), fit.best_seed, fit.log_likelihood, fit.loglik_spread)
+                if not fit.converged:
+                    log.warning(
+                        "Refit at %s did not converge cleanly: n_iter=%d hit_max_iter=%s "
+                        "nonmonotonic_warnings=%d",
+                        dates[i].date(), fit.n_iter, fit.hit_max_iter, fit.nonmonotonic_warnings,
+                    )
+                fits.append(FitRecord(dates[i], i, True, fit.n_iter, fit.hit_max_iter,
+                                      fit.nonmonotonic_warnings, None, fit.best_seed,
+                                      fit.log_likelihood, fit.loglik_spread, fit.failed_seeds))
+                current, current_refit_date = fit, dates[i]
+
+        if current is None:
+            probs = np.full(len(LABELS), np.nan)
+        else:
+            probs = filtered_proba(current, X_all[: i + 1])
+        rows.append((dates[i], current_refit_date, *probs))
 
     out = pd.DataFrame(rows, columns=["Date", "refit_date", *PROB_COLS]).set_index("Date")
-    probs = out[PROB_COLS].to_numpy()
+    out["refit_date"] = pd.to_datetime(out["refit_date"])
+    probs = out[PROB_COLS].to_numpy(dtype=float)
     valid = ~np.isnan(probs).any(axis=1)
     label = np.full(len(out), None, dtype=object)
     label[valid] = np.array(LABELS)[probs[valid].argmax(axis=1)]
     out["label"] = label
-    return out, fits
+    return out, fits, current, current_refit_date
+
+
+def invested(labels: pd.Series) -> pd.Series:
+    """1 unless the most likely state is Stressed; 0 (cash) when there is no label."""
+    return (labels.notna() & (labels != "Stressed")).astype(int)
 
 
 def apply_rule(regimes: pd.DataFrame, returns: pd.Series,
@@ -99,7 +117,7 @@ def apply_rule(regimes: pd.DataFrame, returns: pd.Series,
     start on its second day. Position before the first day is cash, so the
     first entry counts as a switch. Each switch costs `cost_bps` of wealth.
     """
-    signal = regimes["label"].map(lambda lab: lab is not None and lab != "Stressed").astype(int)
+    signal = invested(regimes["label"])
     position = signal.shift(1).iloc[1:].astype(int)
 
     r = returns.reindex(position.index)

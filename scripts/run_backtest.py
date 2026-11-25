@@ -23,7 +23,7 @@ from threadpoolctl import threadpool_info  # noqa: E402
 
 from src.backtest import DEFAULT_COST_BPS, apply_rule, walk_forward  # noqa: E402
 from src.data import fetch_prices  # noqa: E402
-from src.features import compute_features  # noqa: E402
+from src.features import compute_features, log_returns  # noqa: E402
 from src.metrics import load_nber, nber_check, performance  # noqa: E402
 
 log = logging.getLogger("run_backtest")
@@ -34,8 +34,8 @@ def run(cost_bps: float, prices_csv: Path | None = None):
         prices = pd.read_csv(prices_csv, index_col="Date", parse_dates=["Date"])
     else:
         prices = fetch_prices()
-    feat = compute_features(prices)
-    regimes, fits = walk_forward(feat)
+    feat = compute_features(log_returns(prices))
+    regimes, fits, _, _ = walk_forward(feat)
     nber = load_nber(ROOT / "data" / "nber_recessions.csv")
 
     strat = apply_rule(regimes, feat["Returns"], cost_bps)
