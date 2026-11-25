@@ -277,9 +277,36 @@ def write_all(paths: Paths, *, returns, prices, signals, fits, model_state, meta
         os.replace(tmp[final], final)
 
 
+# Rebuilt float columns may differ from stored ones in the last bit when the
+# history was built on another platform (e.g. a different libm for log1p).
+REBUILT_FLOAT_ATOL = 1e-12
+EXACT_COLUMNS = ["label", "refit_date", "signal", "position", "switch"]
+
+
+def keep_stored_rows(rebuilt: pd.DataFrame, stored: pd.DataFrame) -> pd.DataFrame:
+    """Stored rows unchanged, followed by the newly computed rows.
+
+    The rebuilt copies of the stored rows must agree with them: exactly on
+    labels, signals and positions, and within REBUILT_FLOAT_ATOL on the
+    float columns. Anything larger is a logic error, not float noise.
+    """
+    kept = rebuilt.iloc[: len(stored)]
+    floats = [col for col in stored.columns if col not in EXACT_COLUMNS]
+    try:
+        pd.testing.assert_frame_equal(kept[EXACT_COLUMNS], stored[EXACT_COLUMNS],
+                                      check_exact=True, check_freq=False)
+        pd.testing.assert_frame_equal(kept[floats], stored[floats], check_exact=False,
+                                      rtol=0, atol=REBUILT_FLOAT_ATOL, check_freq=False)
+    except AssertionError as exc:
+        raise DataValidationError(f"rebuilt signals changed existing rows: {exc}") from exc
+    return pd.concat([stored, rebuilt.iloc[len(stored):]])
+
+
 def _assemble(paths: Paths, returns, anchor_close, regimes, fits: pd.DataFrame, fit, refit_date,
-              cfg: dict) -> dict:
+              cfg: dict, stored_signals: pd.DataFrame | None = None) -> dict:
     signals = build_signals(regimes, returns, cfg["cost_bps_per_switch"])
+    if stored_signals is not None:
+        signals = keep_stored_rows(signals, stored_signals)
     state = {
         "fit": fit,
         "label_mapping": {label: int(fit.state_order[k]) for k, label in enumerate(LABELS)},
@@ -391,12 +418,7 @@ def daily_update(paths: Paths, fetch=None, now=None, sleep=None) -> str:
         fits = pd.concat([fits, fits_frame(new_records)], ignore_index=True)
 
     out = _assemble(paths, combined, prices["Close"].iloc[-1], regimes, fits, fit,
-                    refit_date, cfg)
-    kept = out["signals"].iloc[: len(signals)]
-    try:
-        pd.testing.assert_frame_equal(kept, signals, check_exact=True, check_freq=False)
-    except AssertionError as exc:
-        raise DataValidationError(f"rebuilt signals changed existing rows: {exc}") from exc
+                    refit_date, cfg, stored_signals=signals)
 
     write_all(paths, **out)
     log.info("Appended %d day(s) through %s%s", len(new), new.index[-1].date(),

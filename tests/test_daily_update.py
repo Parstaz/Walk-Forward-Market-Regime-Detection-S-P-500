@@ -2,6 +2,7 @@ import json
 import shutil
 
 import joblib
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -119,6 +120,34 @@ def test_changed_method_settings_refuse_to_update(built, truth):
     before = snapshot(built)
     fetch = FakeFetch(truth, truth.index[BUILD_AT + 2])
     with pytest.raises(DataValidationError, match="seeds"):
+        daily_update(built, fetch=fetch, now=fetch.now, sleep=no_sleep)
+    assert snapshot(built) == before
+
+
+# --- history built on another platform ----------------------------------------
+
+def _nudge_stored_net_return(paths: Paths, how) -> tuple[pd.Timestamp, float]:
+    """Alter one stored net return on a switch day, as a different libm might."""
+    signals = pd.read_parquet(paths.signals)
+    day = signals.index[signals["switch"] == 1][-1]
+    signals.loc[day, "strategy_net_ret"] = how(signals.loc[day, "strategy_net_ret"])
+    signals.to_parquet(paths.signals)
+    return day, signals.loc[day, "strategy_net_ret"]
+
+
+def test_last_bit_difference_in_stored_floats_is_kept(built, truth):
+    """Stored rows built elsewhere may differ in the last bit; the update keeps them as stored."""
+    day, nudged = _nudge_stored_net_return(built, lambda v: np.nextafter(v, np.inf))
+    fetch = FakeFetch(truth, truth.index[BUILD_AT + 1])
+    assert daily_update(built, fetch=fetch, now=fetch.now, sleep=no_sleep) == "updated"
+    assert pd.read_parquet(built.signals).loc[day, "strategy_net_ret"] == nudged
+
+
+def test_real_difference_in_stored_floats_still_fails(built, truth):
+    _nudge_stored_net_return(built, lambda v: v + 1e-9)
+    before = snapshot(built)
+    fetch = FakeFetch(truth, truth.index[BUILD_AT + 1])
+    with pytest.raises(DataValidationError, match="changed existing rows"):
         daily_update(built, fetch=fetch, now=fetch.now, sleep=no_sleep)
     assert snapshot(built) == before
 
