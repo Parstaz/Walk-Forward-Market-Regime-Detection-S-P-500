@@ -1,0 +1,25 @@
+# Theme for app.py. Light and dark are separate palettes; viewers pick one
+# (or "System") from the app menu. Streamlit's Plotly theme follows these live;
+# Only the regime shades in app.py are chosen per mode on the server.
+
+[theme]
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap"
+baseRadius = "0.6rem"
+metricValueFontSize = "1.6rem"
+
+[theme.light]
+backgroundColor = "#F6F8FA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0F172A"
+borderColor = "#D8DEE4"
+primaryColor = "#2563EB"
+linkColor = "#2563EB"
+
+[theme.dark]
+backgroundColor = "#0B0F14"
+secondaryBackgroundColor = "#121820"
+textColor = "#E6EDF3"
+borderColor = "#1F2A37"
+primaryColor = "#3B82F6"
+linkColor = "#3B82F6"
