@@ -1,0 +1,106 @@
+{
+  "last_update_utc": "2026-11-25T23:29:12+00:00",
+  "data_as_of": "2026-11-25",
+  "first_return_date": "2000-01-04",
+  "last_refit_date": "2026-11-19",
+  "price_anchor": {
+    "date": "2026-11-25",
+    "close": 716.7000122070312
+  },
+  "settings": {
+    "ticker": "SPY",
+    "start": "2000-01-01",
+    "features": [
+      "Returns",
+      "Volatility"
+    ],
+    "vol_window": 21,
+    "burn_in": 1250,
+    "refit_every": 10,
+    "hmm_params": {
+      "n_components": 3,
+      "covariance_type": "full",
+      "n_iter": 1000,
+      "tol": 0.01,
+      "min_covar": 0.001
+    },
+    "seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "labels": [
+      "Calm",
+      "Normal",
+      "Stressed"
+    ],
+    "labelling": "states ordered by raw mean 21-day volatility: lowest Calm, highest Stressed",
+    "rule": "invested unless the most likely filtered state is Stressed; signal applied next day",
+    "cost_bps_per_switch": 5.0,
+    "risk_free_rate": 0.0,
+    "return_tolerance": 2e-05
+  },
+  "metrics_note": "Daily log returns; Sharpe = annualised mean / annualised std with a 0% risk-free rate.",
+  "metrics": {
+    "buy_and_hold": {
+      "sharpe": 0.5348067088909283,
+      "ann_vol": 0.1894892830002064,
+      "total_return": 8.110029097225661,
+      "cagr": 0.1065127618220374,
+      "max_drawdown": -0.5518944928496038,
+      "switches": 0,
+      "pct_invested": 1.0
+    },
+    "strategy_gross": {
+      "sharpe": 0.7515838692970969,
+      "ann_vol": 0.12421923969851048,
+      "total_return": 6.655480885165811,
+      "cagr": 0.09773001913808343,
+      "max_drawdown": -0.28506978298441843,
+      "switches": 52,
+      "pct_invested": 0.831816527120495
+    },
+    "strategy_net": {
+      "sharpe": 0.7419693811162239,
+      "ann_vol": 0.12422117030686879,
+      "total_return": 6.458955154712779,
+      "cagr": 0.0964229839907409,
+      "max_drawdown": -0.28934758757641177,
+      "switches": 52,
+      "pct_invested": 0.831816527120495
+    }
+  },
+  "evaluation": {
+    "start": "2005-01-26",
+    "end": "2026-11-25",
+    "days": 5494
+  },
+  "nber": {
+    "recession_days": 420,
+    "non_recession_days": 5075,
+    "pct_recession_days_stressed": 0.7785714285714286,
+    "pct_non_recession_days_stressed": 0.11783251231527093,
+    "per_recession": [
+      {
+        "recession": "2008-01 to 2009-06",
+        "days": 377,
+        "pct_stressed": 0.753315649867374
+      },
+      {
+        "recession": "2020-03 to 2020-04",
+        "days": 43,
+        "pct_stressed": 1.0
+      }
+    ]
+  },
+  "convergence": {
+    "refits": 550,
+    "failed_refits": 0,
+    "failed_seed_fits": 0,
+    "hit_max_iter": 0,
+    "with_nonmonotonic_warnings": 0,
+    "best_seed_not_42": 438
+  }
+}
