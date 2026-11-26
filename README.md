@@ -5,7 +5,7 @@ A three-state Gaussian hidden Markov model that labels each trading day of SPY a
 close. A scheduled job extends the history every trading day, and a Streamlit app
 shows the current regime.
 
-**Live app:** _link coming soon_ <!-- replace with the Streamlit Community Cloud URL -->
+**Live app:** https://spy-regime-monitor.streamlit.app/
 
 > A research project, not investment advice.
 
