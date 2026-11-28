@@ -1,11 +1,11 @@
 {
-  "last_update_utc": "2026-11-25T23:29:12+00:00",
-  "data_as_of": "2026-11-25",
+  "last_update_utc": "2026-11-28T04:03:17+00:00",
+  "data_as_of": "2026-11-27",
   "first_return_date": "2000-01-04",
   "last_refit_date": "2026-11-19",
   "price_anchor": {
-    "date": "2026-11-25",
-    "close": 716.7000122070312
+    "date": "2026-11-27",
+    "close": 728.3200073242188
   },
   "settings": {
     "ticker": "SPY",
@@ -45,43 +45,43 @@
   "metrics_note": "Daily log returns; Sharpe = annualised mean / annualised std with a 0% risk-free rate.",
   "metrics": {
     "buy_and_hold": {
-      "sharpe": 0.5348067088909283,
-      "ann_vol": 0.1894892830002064,
-      "total_return": 8.110029097225661,
-      "cagr": 0.1065127618220374,
-      "max_drawdown": -0.5518944928496038,
+      "sharpe": 0.5385662465047955,
+      "ann_vol": 0.1895017929408265,
+      "total_return": 8.257731750810407,
+      "cagr": 0.10730001139404166,
+      "max_drawdown": -0.5518944928496037,
       "switches": 0,
       "pct_invested": 1.0
     },
     "strategy_gross": {
-      "sharpe": 0.7515838692970969,
-      "ann_vol": 0.12421923969851048,
+      "sharpe": 0.751515337346068,
+      "ann_vol": 0.12420795953190773,
       "total_return": 6.655480885165811,
-      "cagr": 0.09773001913808343,
+      "cagr": 0.09770434991885368,
       "max_drawdown": -0.28506978298441843,
       "switches": 52,
-      "pct_invested": 0.831816527120495
+      "pct_invested": 0.8316651501364877
     },
     "strategy_net": {
-      "sharpe": 0.7419693811162239,
-      "ann_vol": 0.12422117030686879,
+      "sharpe": 0.7419017296940992,
+      "ann_vol": 0.1242098893208052,
       "total_return": 6.458955154712779,
-      "cagr": 0.0964229839907409,
+      "cagr": 0.0963976729153817,
       "max_drawdown": -0.28934758757641177,
       "switches": 52,
-      "pct_invested": 0.831816527120495
+      "pct_invested": 0.8316651501364877
     }
   },
   "evaluation": {
     "start": "2005-01-26",
-    "end": "2026-11-25",
-    "days": 5494
+    "end": "2026-11-27",
+    "days": 5495
   },
   "nber": {
     "recession_days": 420,
-    "non_recession_days": 5075,
+    "non_recession_days": 5076,
     "pct_recession_days_stressed": 0.7785714285714286,
-    "pct_non_recession_days_stressed": 0.11783251231527093,
+    "pct_non_recession_days_stressed": 0.11800630417651695,
     "per_recession": [
       {
         "recession": "2008-01 to 2009-06",
